@@ -1,153 +1,107 @@
 export default {
-  async fetch(request, env) {
-    const origin = request.headers.get("Origin") || "*";
+async fetch(request, env) {
+const origin = request.headers.get("Origin") || "*";
 
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400"
-    };
+const corsHeaders = {
+  "Access-Control-Allow-Origin": origin,
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400"
+};
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders
-      });
+const jsonResponse = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json"
     }
+  });
 
-    if (request.method !== "POST") {
-      return new Response(
-        JSON.stringify({
-          error: "Use POST"
-        }),
-        {
-          status: 405,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json"
-          }
-        }
-      );
-    }
+if (request.method === "OPTIONS") {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders
+  });
+}
 
-    if (!env.GEMINI_API_KEY) {
-      return new Response(
-        JSON.stringify({
-          error: "GEMINI_API_KEY is not configured"
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json"
-          }
-        }
-      );
-    }
+if (request.method !== "POST") {
+  return jsonResponse({ error: "Use POST" }, 405);
+}
 
-    try {
-      const now = Date.now();
+if (!env.GEMINI_API_KEY) {
+  return jsonResponse({
+    error: "GEMINI_API_KEY is not configured"
+  }, 500);
+}
 
-      const expireTime = new Date(
-        now + 30 * 60 * 1000
-      ).toISOString();
+try {
+  const now = Date.now();
 
-      const newSessionExpireTime = new Date(
-        now + 60 * 1000
-      ).toISOString();
+  const payload = {
+    uses: 1,
 
-      const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1alpha/auth_tokens",
-        {
-          method: "POST",
+    expireTime: new Date(
+      now + 30 * 60 * 1000
+    ).toISOString(),
 
-          headers: {
-            "x-goog-api-key": env.GEMINI_API_KEY,
-            "Content-Type": "application/json"
-          },
+    newSessionExpireTime: new Date(
+      now + 60 * 1000
+    ).toISOString(),
 
-          body: JSON.stringify({
-            uses: 1,
+    liveConnectConstraints: {
+      model: "models/gemini-3.8-live",
 
-            expireTime,
-
-            newSessionExpireTime,
-
-            liveConnectConstraints: {
-              model: "models/gemini-3.8-live",
-
-              config: {
-                responseModalities: ["AUDIO"],
-                inputAudioTranscription: {},
-                outputAudioTranscription: {},
-                sessionResumption: {}
-              }
-            }
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return new Response(
-          JSON.stringify({
-            error:
-              data?.error?.message ||
-              "Gemini token request failed"
-          }),
-          {
-            status: response.status,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json"
-            }
-          }
-        );
+      config: {
+        responseModalities: ["AUDIO"],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        sessionResumption: {}
       }
-
-      if (!data?.name) {
-        return new Response(
-          JSON.stringify({
-            error: "Gemini did not return an ephemeral token"
-          }),
-          {
-            status: 500,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json"
-            }
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          token: data.name
-        }),
-        {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json"
-          }
-        }
-      );
-
-    } catch (error) {
-      return new Response(
-        JSON.stringify({
-          error: error?.message || "Worker error"
-        }),
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json"
-          }
-        }
-      );
     }
+  };
+
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/auth_tokens",
+    {
+      method: "POST",
+
+      headers: {
+        "x-goog-api-key": env.GEMINI_API_KEY,
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify(payload)
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return jsonResponse({
+      error: data?.error?.message ||
+        "Gemini token generation failed",
+      details: data
+    }, response.status);
   }
+
+  if (!data?.name) {
+    return jsonResponse({
+      error: "Gemini did not return a token",
+      details: data
+    }, 500);
+  }
+
+  return jsonResponse({
+    token: data.name,
+    model: "models/gemini-3.8-live"
+  });
+
+} catch (error) {
+  return jsonResponse({
+    error: error?.message || "Worker error"
+  }, 500);
+}
+
+}
 };
