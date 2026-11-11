@@ -17,10 +17,18 @@ export default {
     }
 
     if (request.method !== "POST") {
-      return new Response("Use POST", {
-        status: 405,
-        headers: corsHeaders
-      });
+      return new Response(
+        JSON.stringify({
+          error: "Use POST"
+        }),
+        {
+          status: 405,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        }
+      );
     }
 
     if (!env.GEMINI_API_KEY) {
@@ -41,24 +49,30 @@ export default {
     try {
       const now = Date.now();
 
+      const expireTime = new Date(
+        now + 30 * 60 * 1000
+      ).toISOString();
+
+      const newSessionExpireTime = new Date(
+        now + 60 * 1000
+      ).toISOString();
+
       const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/auth_tokens",
+        "https://generativelanguage.googleapis.com/v1alpha/auth_tokens",
         {
           method: "POST",
+
           headers: {
             "x-goog-api-key": env.GEMINI_API_KEY,
             "Content-Type": "application/json"
           },
+
           body: JSON.stringify({
             uses: 1,
 
-            expireTime: new Date(
-              now + 30 * 60 * 1000
-            ).toISOString(),
+            expireTime,
 
-            newSessionExpireTime: new Date(
-              now + 60 * 1000
-            ).toISOString(),
+            newSessionExpireTime,
 
             liveConnectConstraints: {
               model: "models/gemini-3.8-live",
@@ -93,6 +107,21 @@ export default {
         );
       }
 
+      if (!data?.name) {
+        return new Response(
+          JSON.stringify({
+            error: "Gemini did not return an ephemeral token"
+          }),
+          {
+            status: 500,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json"
+            }
+          }
+        );
+      }
+
       return new Response(
         JSON.stringify({
           token: data.name
@@ -109,7 +138,7 @@ export default {
     } catch (error) {
       return new Response(
         JSON.stringify({
-          error: error.message || "Worker error"
+          error: error?.message || "Worker error"
         }),
         {
           status: 500,
