@@ -1,19 +1,26 @@
 export default {
   async fetch(request, env) {
-    const origin = request.headers.get("Origin");
+    const origin = request.headers.get("Origin") || "*";
+
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400"
+    };
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": origin || "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
-        }
+        status: 204,
+        headers: corsHeaders
       });
     }
 
     if (request.method !== "POST") {
-      return new Response("Use POST", { status: 405 });
+      return new Response("Use POST", {
+        status: 405,
+        headers: corsHeaders
+      });
     }
 
     if (!env.GEMINI_API_KEY) {
@@ -24,6 +31,7 @@ export default {
         {
           status: 500,
           headers: {
+            ...corsHeaders,
             "Content-Type": "application/json"
           }
         }
@@ -78,6 +86,7 @@ export default {
           {
             status: response.status,
             headers: {
+              ...corsHeaders,
               "Content-Type": "application/json"
             }
           }
@@ -89,9 +98,10 @@ export default {
           token: data.name
         }),
         {
+          status: 200,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": origin || "*"
+            ...corsHeaders,
+            "Content-Type": "application/json"
           }
         }
       );
@@ -104,6 +114,7 @@ export default {
         {
           status: 500,
           headers: {
+            ...corsHeaders,
             "Content-Type": "application/json"
           }
         }
